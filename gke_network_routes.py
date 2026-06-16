@@ -1,13 +1,20 @@
 #!/usr/bin/env python3
 """
-GKE Gateway API Routes Mapper v.1.0.0
-Extrae Torre, Proyecto, DNS, Path y Servicio usando HTTPRoutes (Gateway API).
-Solo lectura.
+GKE Gateway API + Ingress Routes Mapper PRO v2.0
+Extrae:
+- Gateway API (HTTPRoutes)
+- Ingress
+- DNS
+- Path (liveness/readiness)
+- Servicio
+- Puerto
+- Namespace
+
+Solo lectura
 """
 
 import subprocess
 import json
-import sys
 from datetime import datetime
 
 from rich.console import Console
@@ -16,16 +23,14 @@ from rich.panel import Panel
 from rich import box
 
 import openpyxl
-from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-from openpyxl.utils import get_column_letter
 
 console = Console()
 
 PROYECTOS = {
-    "1": {"id": "proyecto gcp", "label": "Desarrollo (DEV)"},
-    "2": {"id": "proyecto gcp", "label": "QA"},
-    "3": {"id": "proyecto gcp", "label": "Producción (PROD)"},
-    "4": {"id": "proyecto gcp", "label": "Desarrollo proyecto (DEV)"}
+    "1": {"id": "cpl-corp-cial-dev-17072024", "label": "Desarrollo (DEV)"},
+    "2": {"id": "cpl-corp-cial-qa-06082024", "label": "QA"},
+    "3": {"id": "cpl-corp-cial-prod-17042024", "label": "Producción (PROD)"},
+    "4": {"id": "cpl-cial-strplan-dev-12062025", "label": "Strplan DEV"},
 }
 
 # ---------------------------
@@ -35,12 +40,14 @@ def run_cmd(cmd):
     r = subprocess.run(cmd, capture_output=True, text=True)
     return r.stdout.strip(), r.returncode
 
+
 def switch_project(project_id):
     _, rc = run_cmd(["gcloud", "config", "set", "project", project_id])
     return rc == 0
 
+
 # ---------------------------
-# CACHE GLOBAL K8S
+# CACHE K8S
 # ---------------------------
 def build_k8s_cache():
     cache = {"services": {}, "deployments": []}
@@ -63,7 +70,8 @@ def build_k8s_cache():
 
     return cache
 
-def get_liveness_from_cache(namespace, service, cache):
+
+def get_probe_path(namespace, service, cache):
     selector = cache["services"].get((namespace, service))
     if not selector:
         return "no encontrado"
@@ -76,13 +84,34 @@ def get_liveness_from_cache(namespace, service, cache):
 
         if all(labels.get(k) == v for k, v in selector.items()):
             containers = d["spec"]["template"]["spec"]["containers"]
+
             for c in containers:
-                l = c.get("livenessProbe", {})
-                path = l.get("httpGet", {}).get("path")
-                if path:
-                    return path
+                probe = c.get("livenessProbe") or c.get("readinessProbe")
+
+                if probe:
+                    path = probe.get("httpGet", {}).get("path")
+                    if path:
+                        return path
 
     return "no encontrado"
+
+
+def get_service_port(namespace, service):
+    out, rc = run_cmd([
+        "kubectl", "get", "svc", service,
+        "-n", namespace, "-o", "json"
+    ])
+    if rc != 0:
+        return "NA"
+
+    data = json.loads(out)
+    ports = data.get("spec", {}).get("ports", [])
+
+    if ports:
+        return str(ports[0].get("port"))
+
+    return "NA"
+
 
 # ---------------------------
 # GKE
@@ -91,17 +120,20 @@ def get_clusters():
     out, rc = run_cmd(["gcloud", "container", "clusters", "list", "--format=json"])
     return json.loads(out) if rc == 0 else []
 
+
 def connect_cluster(name, loc):
     _, rc = run_cmd([
         "gcloud", "container", "clusters",
-        "get-credentials", name, "--zone", loc, "--quiet"
+        "get-credentials", name,
+        "--zone", loc, "--quiet"
     ])
     return rc == 0
 
+
 # ---------------------------
-# CORE
+# ROUTES - GATEWAY API
 # ---------------------------
-def get_routes(project, cluster, cache):
+def get_gateway_routes(project, cluster, cache):
     out, rc = run_cmd(["kubectl", "get", "httproutes", "--all-namespaces", "-o", "json"])
     if rc != 0:
         return []
@@ -117,60 +149,99 @@ def get_routes(project, cluster, cache):
         dns = spec.get("hostnames", ["*"])[0]
 
         for rule in spec.get("rules", []):
-            backends = rule.get("backendRefs", [])
-
-            for backend in backends:
+            for backend in rule.get("backendRefs", []):
                 svc = backend.get("name", "NA")
 
-                # 🔥 LIVENESS REAL
-                liv = get_liveness_from_cache(ns, svc, cache)
+                path = get_probe_path(ns, svc, cache)
+                port = get_service_port(ns, svc)
 
-                # limpieza
-                if "/actuator/" in liv:
-                    liv = liv.split("/actuator/")[0]
-                    if not liv.endswith("/"):
-                        liv += "/"
+                # limpieza actuator
+                if "/actuator/" in path:
+                    path = path.split("/actuator/")[0]
+                    if not path.endswith("/"):
+                        path += "/"
 
                 results.append({
                     "torre": "Compras.RMI",
                     "proyecto": project,
                     "cluster": cluster,
+                    "namespace": ns,
                     "dns": dns,
-                    "path": liv,
+                    "path": path,
+                    "port": port,
                     "service": svc
                 })
 
     return results
 
+
+# ---------------------------
+# ROUTES - INGRESS
+# ---------------------------
+def get_ingress_routes(project, cluster):
+    out, rc = run_cmd(["kubectl", "get", "ingress", "--all-namespaces", "-o", "json"])
+    if rc != 0:
+        return []
+
+    data = json.loads(out)
+    results = []
+
+    for item in data.get("items", []):
+        ns = item["metadata"].get("namespace", "default")
+
+        rules = item.get("spec", {}).get("rules", [])
+        for r in rules:
+            host = r.get("host", "*")
+
+            paths = r.get("http", {}).get("paths", [])
+            for p in paths:
+                svc = p.get("backend", {}).get("service", {}).get("name", "NA")
+
+                results.append({
+                    "torre": "Compras.RMI",
+                    "proyecto": project,
+                    "cluster": cluster,
+                    "namespace": ns,
+                    "dns": host,
+                    "path": p.get("path", "/"),
+                    "port": "NA",
+                    "service": svc
+                })
+
+    return results
+
+
 # ---------------------------
 # EXCEL
 # ---------------------------
-def export_excel(data, proyecto):
+def export_excel(data):
     file = f"reporte_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
 
     wb = openpyxl.Workbook()
     ws = wb.active
 
-    headers = ["Torre","Proyecto","Cluster","DNS","Path","Service"]
+    headers = ["Torre","Proyecto","Cluster","Namespace","DNS","Path","Port","Service"]
     ws.append(headers)
 
     for r in data:
         ws.append([
             r["torre"], r["proyecto"], r["cluster"],
-            r["dns"], r["path"], r["service"]
+            r["namespace"], r["dns"], r["path"],
+            r["port"], r["service"]
         ])
 
     wb.save(file)
     console.print(f"\n✅ Excel generado: {file}")
 
+
 # ---------------------------
 # MAIN
 # ---------------------------
 def main():
-    console.print(Panel("GKE Gateway Extractor PRO", border_style="cyan"))
+    console.print(Panel("GKE Routes Mapper PRO", border_style="cyan"))
 
-    # entorno
-    for k,v in PROYECTOS.items():
+    # seleccionar proyecto
+    for k, v in PROYECTOS.items():
         console.print(f"[{k}] {v['label']}")
 
     sel = input("Selecciona: ")
@@ -180,7 +251,7 @@ def main():
 
     clusters = get_clusters()
 
-    for i,c in enumerate(clusters,1):
+    for i, c in enumerate(clusters, 1):
         console.print(f"[{i}] {c['name']}")
 
     sel_c = input("Cluster (0 = todos): ")
@@ -188,7 +259,7 @@ def main():
     if sel_c == "0":
         selected = clusters
     else:
-        selected = [clusters[int(sel_c)-1]]
+        selected = [clusters[int(sel_c) - 1]]
 
     total = []
 
@@ -199,28 +270,41 @@ def main():
         console.print(f"\n🔌 {name}")
 
         if connect_cluster(name, loc):
-
             console.print("⚡ Cacheando cluster...")
             cache = build_k8s_cache()
 
-            console.print("📡 Extrayendo rutas...")
-            rutas = get_routes(proyecto, name, cache)
+            console.print("📡 Extrayendo Gateway API...")
+            rutas = get_gateway_routes(proyecto, name, cache)
+
+            console.print("🌐 Extrayendo Ingress...")
+            rutas_ing = get_ingress_routes(proyecto, name)
+
+            rutas.extend(rutas_ing)
             total.extend(rutas)
 
             console.print(f"✅ {len(rutas)} rutas")
 
     # tabla
     table = Table(box=box.SIMPLE)
-    table.add_column("Cluster")
+    table.add_column("Namespace")
+    table.add_column("DNS")
     table.add_column("Path")
+    table.add_column("Port")
     table.add_column("Service")
 
     for r in total:
-        table.add_row(r["cluster"], r["path"], r["service"])
+        table.add_row(
+            r["namespace"],
+            r["dns"],
+            r["path"],
+            r["port"],
+            r["service"]
+        )
 
     console.print(table)
 
-    export_excel(total, proyecto)
+    export_excel(total)
+
 
 if __name__ == "__main__":
     main()
