@@ -27,10 +27,10 @@ import openpyxl
 console = Console()
 
 PROYECTOS = {
-    "1": {"id": "cpl-corp-cial-dev-17072024", "label": "Desarrollo (DEV)"},
-    "2": {"id": "cpl-corp-cial-qa-06082024", "label": "QA"},
-    "3": {"id": "cpl-corp-cial-prod-17042024", "label": "Producción (PROD)"},
-    "4": {"id": "cpl-cial-strplan-dev-12062025", "label": "Strplan DEV"},
+    "1": {"id": "tu proyecto", "label": "Desarrollo (DEV)"},
+    "2": {"id": "tu proyecto", "label": "QA"},
+    "3": {"id": "tu proyecto", "label": "Producción (PROD)"},
+    "4": {"id": "tu proyecto", "label": "diferente proyecto DEV"},
 }
 
 # ---------------------------
