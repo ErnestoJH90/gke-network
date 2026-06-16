@@ -25,7 +25,7 @@ PROYECTOS = {
     "1": {"id": "proyecto gcp", "label": "Desarrollo (DEV)"},
     "2": {"id": "proyecto gcp", "label": "QA"},
     "3": {"id": "proyecto gcp", "label": "Producción (PROD)"},
-    "4": {"id": "proyecto gcp", "label": "Desarrollo proyecto (DEV)"},
+    "4": {"id": "proyecto gcp", "label": "Desarrollo proyecto (DEV)"}
 }
 
 # ---------------------------
