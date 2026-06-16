@@ -14,7 +14,7 @@ pipeline {
         
         stage('Análisis SonarQube') {
             steps {
-                // Busca la herramienta configurada en el paso 3
+                // Busca la herramienta 
                 def scannerHome = tool 'SonarScanner'
                 
                 withSonarQubeEnv("${env.SONAR_SERVER}") {
