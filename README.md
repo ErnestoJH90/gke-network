@@ -1,156 +1,63 @@
-# gke-network
+# Auditoría de Pull Requests para Azure DevOps
+# Author: Ernesto Jimenez Huitron
+# DevOps
 
-Este script es una herramienta de auditoría/inventario para GKE (Google Kubernetes Engine) que:
-👉 Recorre clusters de Kubernetes en varios proyectos de GCP
-👉 Extrae rutas HTTP definidas con Gateway API (HTTPRoutes)
-👉 Relaciona cada ruta con su servicio y path real (livenessProbe)
-👉 Muestra resultados en consola y los exporta a Excel
+PR Audit para Azure DevOps
+Descripción
+pr_audit.py es una herramienta de auditoría para Azure DevOps que permite recopilar información de Pull Requests (PRs) dentro de un rango de fechas específico. El script consulta la API REST de Azure DevOps para obtener datos de repositorios y PRs, con el objetivo de generar reportes de seguimiento y análisis de actividad de desarrollo. 
+Funcionalidades
 
-🧠 Explicación clara por partes
-1. 🎯 Propósito principal
-El script sirve para generar un mapa de rutas (routes mapping) en un entorno GKE, mostrando:
+Consulta repositorios Git de un proyecto en Azure DevOps.
+Obtiene Pull Requests dentro de un rango de fechas definido por el usuario. 
+Normaliza nombres de ramas eliminando prefijos como refs/heads/. 
+Consume la API REST de Azure DevOps utilizando autenticación mediante Personal Access Token (PAT). 
+Genera reportes para auditoría y seguimiento de actividad en repositorios. 
 
-Proyecto
-Cluster
-DNS (host)
-Path (endpoint real derivado del liveness probe)
-Servicio de Kubernetes
+Requisitos
 
-👉 Es útil para:
+Python 3.9+
+Librerías:
+requests
+pandas
 
-Inventarios de APIs/microservicios
-Auditorías de rutas
-Documentación de arquitectura
-Diagnóstico de gateways
+Instalación de dependencias:
 
+Configuración
 
-2. 🧩 Flujo general (qué hace paso a paso)
-🔹 Paso 1: Selección de entorno
-Te muestra opciones:
-[1] Desarrollo (DEV)
-[2] QA
-[3] Producción (PROD)
-[4] N proyectos ----> depende de ti
+Antes de ejecutar el script, configure los siguientes parámetros:
+PythonORG = "TuOrganizacion"PROJECT = "TuProyecto"PAT = "tu_personal_access_token"Show more lines
+Donde:
 
-Cambia el proyecto activo de GCP (gcloud config set project)
+ORG: Nombre de la organización en Azure DevOps.
+PROJECT: Nombre del proyecto.
+PAT: Personal Access Token con permisos de lectura sobre repositorios y Pull Requests.
 
+Uso
 
-🔹 Paso 2: Selección de cluster
+Ejecute el script desde la línea de comandos:
+python pr_audit.py
 
-Lista los clusters del proyecto
-Puedes elegir uno o todos (0)
+El sistema solicitará un rango de fechas para realizar la auditoría. Posteriormente consultará los repositorios y Pull Requests disponibles para generar el reporte correspondiente.
 
+Flujo General
+Usuario
+   │
+   ▼
+Selecciona rango de fechas
+   │
+   ▼
+Obtiene repositorios Azure DevOps
+   │
+   ▼
+Consulta Pull Requests
+   │
+   ▼
+Procesa resultados
+   │
+   ▼
+Genera reporte de auditoría
 
-🔹 Paso 3: Conectar a cada cluster
-Ejecuta:
-Shellgcloud container clusters get-credentials
+Objetivo
+Facilitar la revisión de actividad en repositorios Azure DevOps, permitiendo identificar Pull Requests creados, revisados y completados durante un período determinado para fines de auditoría, métricas o seguimiento de equipos de desarrollo.
 
-👉 Esto configura kubectl para hablar con ese cluster.
-
-🔹 Paso 4: Construye un cache local de Kubernetes
-Obtiene:
-
-Servicios (Services) → con sus selectors
-Deployments → con sus labels y probes
-
-Esto sirve para hacer correlaciones después.
-
-🔹 Paso 5: Extrae rutas (HTTPRoutes)
-Ejecuta:
-Shellkubectl get httproutes --all-namespaces -o json
-
-De cada ruta obtiene:
-
-DNS (hostnames)
-Backends (servicios asociados)
-
-
-🔹 Paso 6: Encuentra el PATH real 🔥
-Aquí está lo más interesante:
-👉 Para cada servicio:
-
-Busca su selector
-Encuentra el deployment que coincide con esos labels
-Extrae el:
-
-YAMLlivenessProbe.httpGet.path
-
-💡 Ese path suele ser algo como:
-/actuator/health
-
-Luego lo limpia para dejar algo como:
-/
-/api/
-
-
-🔹 Paso 7: Construye resultados
-
-Cada fila contiene:
-{
-  "torre": "Tu-Proyecto",
-  "proyecto": "...",
-  "cluster": "...",
-  "dns": "...",
-  "path": "...",
-  "service": "..."
-}
-
-🔹 Paso 8: Muestra tabla en consola
-
-Ejemplo:
-Cluster        Path      Service
-cluster-1      /api/     user-service
-cluster-2      /         auth-service
-
-
-🔹 Paso 9: Exporta a Excel 📊
-Genera un archivo como:
-reporte_fecha_124500.xlsx
-
-Con columnas:
-
-Torre
-Proyecto
-Cluster
-DNS
-Path
-Service
-
-
-⚙️ Tecnologías usadas
-
-gcloud → gestión de GKE
-kubectl → consulta de recursos de Kubernetes
-rich → UI bonita en consola
-openpyxl → generar Excel
-subprocess → ejecutar comandos shell
-
-
-🔥 Qué lo hace poderoso
-✅ No modifica nada → solo lectura
-✅ Funciona multi-cluster
-✅ Relaciona:
-
-Gateway API (HTTPRoutes)
-Services
-Deployments
-
-✅ Deduce endpoints reales automáticamente
-
-⚠️ Limitaciones
-
-Solo funciona si:
-
-Tienes acceso a los clusters
-kubectl y gcloud configurados
-
-
-Depende de que:
-
-Services usen selector
-Deployments tengan livenessProbe
-
-
-
-Si no:
-path = "no encontrado"
+Nota: El archivo actual se encuentra incompleto y requiere ajustes para ejecutarse correctamente, ya que algunas secciones de configuración, autenticación y consultas a la API aparecen truncadas.
